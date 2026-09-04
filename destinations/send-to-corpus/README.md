@@ -1,6 +1,6 @@
 # send-to-corpus
 
-Upload a finished export to a **YLIB corpus** instance: `POST /book/upload`, multipart, `X-API-Key` header.
+Upload a finished export to a **Corpus library** instance: `POST /book/upload`, multipart, `X-API-Key` header.
 
 Aglaïa already knows the document's metadata, so it sends it — retyping a title into a web form is the tedium this destination removes. Only fields that have a value are sent: an empty field means *erase this* to the corpus's metadata route.
 

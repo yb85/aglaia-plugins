@@ -39,7 +39,7 @@ reader who knows the author are both consenting truthfully.
 | [send-to-folder](destinations/send-to-folder) | destination | Copy the export into a folder you already sync. The smallest complete example. |
 | [send-to-calibre](destinations/send-to-calibre) | destination | Add it to a calibre content server's library. |
 | [send-to-kindle](destinations/send-to-kindle) | destination | Mail it to a Kindle address. |
-| [send-to-corpus](destinations/send-to-corpus) | destination | Upload it to a YLIB corpus. |
+| [send-to-corpus](destinations/send-to-corpus) | destination | Upload it to a Corpus library. |
 
 ## Submitting one
 
