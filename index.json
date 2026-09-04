@@ -1,18 +1,18 @@
 {
   "schema": 1,
   "api": 1,
-  "generated_at": "2026-09-04T21:11:28Z",
+  "generated_at": "2026-09-04T21:25:43Z",
   "plugins": [
     {
       "slug": "send-to-calibre",
       "kind": "destinations",
-      "name": "calibre library",
+      "name": "Export to Calibre server",
       "version": "1.0.0",
-      "summary": "Add a finished export to a calibre content server's library.",
+      "summary": "Add a finished export to a Calibre content server's library.",
       "author": "Aglaïa <aglaia@bibli.cc>",
       "license": "MIT",
       "homepage": "https://aglaia.bibli.cc",
-      "source_url": "https://github.com/yb85/aglaia-plugins/tree/8fc1f3b3054518a4dc3aa7de11c59fff68d389c8/destinations/send-to-calibre",
+      "source_url": "https://github.com/yb85/aglaia-plugins/tree/6fd1096b8c70c3e52eae483252316b31f0e10cf9/destinations/send-to-calibre",
       "requires": {
         "aglaia": ">=0.1.0rc5,<0.2",
         "python": ">=3.12"
@@ -29,8 +29,8 @@
         "httpx"
       ],
       "files": {
-        "send_to_calibre.py": "sha256:987a55b2b5d33661a65d5e266bf658739978914c588695eadd9b06bad482175a",
-        "aglaia-plugin.toml": "sha256:e6fd406c9515cc67adf0eb93d2f7330c13f0af2f909048f2c3d2b4b4e0fa9fc0",
+        "send_to_calibre.py": "sha256:287a1f9e0bede6c93eb90e616096906af15ca16571dacfba7bcc74a5f60ba660",
+        "aglaia-plugin.toml": "sha256:cc5641ee071ce7a1c559d0347d70b5f5c73601c030eb61a0e9d2027deb5d05a8",
         "README.md": "sha256:cf0251ca6c11e4fb511a6b555f6e452cf8c2196261301b111900e44696031849",
         "LICENSE": "sha256:1ee05128708885ab4c0ace00306a9d4a0e6fd0e7e8464f24cfa665774813bf2e"
       }
@@ -38,13 +38,13 @@
     {
       "slug": "send-to-corpus",
       "kind": "destinations",
-      "name": "Corpus library",
+      "name": "Export to Corpus library",
       "version": "1.0.0",
       "summary": "Upload a finished export to a Corpus library instance.",
       "author": "Aglaïa <aglaia@bibli.cc>",
       "license": "MIT",
       "homepage": "https://aglaia.bibli.cc",
-      "source_url": "https://github.com/yb85/aglaia-plugins/tree/8fc1f3b3054518a4dc3aa7de11c59fff68d389c8/destinations/send-to-corpus",
+      "source_url": "https://github.com/yb85/aglaia-plugins/tree/6fd1096b8c70c3e52eae483252316b31f0e10cf9/destinations/send-to-corpus",
       "requires": {
         "aglaia": ">=0.1.0rc5,<0.2",
         "python": ">=3.12"
@@ -61,8 +61,8 @@
         "httpx"
       ],
       "files": {
-        "send_to_corpus.py": "sha256:b7e270032d2197a41fe6187dc3a5ebdc3d1f240bf6420055975e8ad0d904e226",
-        "aglaia-plugin.toml": "sha256:bff1525c12ac55a242df8e27867dd5f36e2006a5b71e3e243fe5c5fa6964e6ac",
+        "send_to_corpus.py": "sha256:ee79572924d57c27ce9b7271036d74ca9a06fb946c02af4634c321651d234bf4",
+        "aglaia-plugin.toml": "sha256:272e371b5415d4d31e0e91eec7c2b67a68a28fd67351c46437ac83d5cbd1aab9",
         "README.md": "sha256:c2027ccd623289d9bf5fe3cdbe4d80f9a6850271fcf52637f20190b07e878721",
         "LICENSE": "sha256:1ee05128708885ab4c0ace00306a9d4a0e6fd0e7e8464f24cfa665774813bf2e"
       }
@@ -70,13 +70,13 @@
     {
       "slug": "send-to-folder",
       "kind": "destinations",
-      "name": "A folder",
+      "name": "Export to a folder",
       "version": "1.0.0",
-      "summary": "Copy the export into a folder — synced, watched, or plain.",
+      "summary": "Copy a finished export into a folder — synced, watched, or plain.",
       "author": "Aglaïa <aglaia@bibli.cc>",
       "license": "MIT",
       "homepage": "https://aglaia.bibli.cc",
-      "source_url": "https://github.com/yb85/aglaia-plugins/tree/8fc1f3b3054518a4dc3aa7de11c59fff68d389c8/destinations/send-to-folder",
+      "source_url": "https://github.com/yb85/aglaia-plugins/tree/6fd1096b8c70c3e52eae483252316b31f0e10cf9/destinations/send-to-folder",
       "requires": {
         "aglaia": ">=0.1.0rc5,<0.2",
         "python": ">=3.12"
@@ -91,8 +91,8 @@
       },
       "imports": [],
       "files": {
-        "send_to_folder.py": "sha256:889016e94503bae1f2e39b625c8a7418e7706c2fb4560759a7ef033266a8dfea",
-        "aglaia-plugin.toml": "sha256:9f26953e5c31107dd765cbb904d3632eb8b6771753a0be1a3a208d8e6fe45484",
+        "send_to_folder.py": "sha256:2944b550920389ffa064a8e19144174f4fb33848512da550a3b27d2f8c2cf77a",
+        "aglaia-plugin.toml": "sha256:455180ee07c8a8ad4ceb79f3c7b4a69f3f2eb813ccd94a43d316b7a553662a9a",
         "README.md": "sha256:cccc10932f745a849d89e3386e0964a054dc0857aa66b79bbd5adb22e9098672",
         "LICENSE": "sha256:1ee05128708885ab4c0ace00306a9d4a0e6fd0e7e8464f24cfa665774813bf2e"
       }
@@ -100,13 +100,13 @@
     {
       "slug": "send-to-kindle",
       "kind": "destinations",
-      "name": "Kindle (email)",
+      "name": "Export to Kindle by email",
       "version": "1.0.0",
       "summary": "Mail a finished export to a Kindle address.",
       "author": "Aglaïa <aglaia@bibli.cc>",
       "license": "MIT",
       "homepage": "https://aglaia.bibli.cc",
-      "source_url": "https://github.com/yb85/aglaia-plugins/tree/8fc1f3b3054518a4dc3aa7de11c59fff68d389c8/destinations/send-to-kindle",
+      "source_url": "https://github.com/yb85/aglaia-plugins/tree/6fd1096b8c70c3e52eae483252316b31f0e10cf9/destinations/send-to-kindle",
       "requires": {
         "aglaia": ">=0.1.0rc5,<0.2",
         "python": ">=3.12"
@@ -121,8 +121,8 @@
       },
       "imports": [],
       "files": {
-        "send_to_kindle.py": "sha256:8f018fb728809a03d28f24769b97c60bad08935356496ccae93df933b69e5ddf",
-        "aglaia-plugin.toml": "sha256:7a562c322833de6e6e3acb86d30db819cef91e48f2145637c0692522a679e365",
+        "send_to_kindle.py": "sha256:81cc5a7912b3e3636c004e27db2c3acc23fdc3dfd43a4ef0be41422ea8db1d4d",
+        "aglaia-plugin.toml": "sha256:ebe248a5d0c126dfdd7a8f9039cbdd9be09c51c00051376693b1501e648c8ec0",
         "README.md": "sha256:ffc30720bb979d863df771a520bc3693aef2b895b886ee17932c072a30b83183",
         "LICENSE": "sha256:1ee05128708885ab4c0ace00306a9d4a0e6fd0e7e8464f24cfa665774813bf2e"
       }
@@ -136,7 +136,7 @@
       "author": "Aglaïa <aglaia@bibli.cc>",
       "license": "MIT",
       "homepage": "https://aglaia.bibli.cc",
-      "source_url": "https://github.com/yb85/aglaia-plugins/tree/8fc1f3b3054518a4dc3aa7de11c59fff68d389c8/processors/stamp-remover",
+      "source_url": "https://github.com/yb85/aglaia-plugins/tree/6fd1096b8c70c3e52eae483252316b31f0e10cf9/processors/stamp-remover",
       "requires": {
         "aglaia": ">=0.1.0rc5,<0.2",
         "python": ">=3.12"

@@ -46,7 +46,7 @@ def safe_name(stem: str, fallback: str) -> str:
 @register_destination
 class FolderDestination(Destination):
     name = "send-to-folder"
-    display = "A folder"
+    display = "Export to a folder"
     description = "Copy the export into a folder — synced, watched, or plain."
     accepts = ("pdf", "md", "txt", "epub", "html", "docx")
 

@@ -1,8 +1,8 @@
 [plugin]
 slug     = "send-to-folder"
-name     = "A folder"
+name     = "Export to a folder"
 version  = "1.0.0"
-summary  = "Copy the export into a folder — synced, watched, or plain."
+summary  = "Copy a finished export into a folder — synced, watched, or plain."
 author   = "Aglaïa <aglaia@bibli.cc>"
 homepage = "https://aglaia.bibli.cc"
 license  = "MIT"
