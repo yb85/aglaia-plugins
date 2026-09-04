@@ -71,8 +71,9 @@ class CorpusDestination(Destination):
     )
     SECRET_FIELDS = (
         Field("api_key", "API key", "secret", "", required=True,
-              help="ZLIB_APP_KEY — sent as the X-API-Key header. It is in "
-                   "the instance's .env, never in a versioned file."),
+              help="CORPUS_APP_KEY — sent as the X-API-Key header. It "
+                   "lives in the instance's .env, never in a versioned "
+                   "file."),
     )
 
     # ── plumbing ──────────────────────────────────────────────────────
