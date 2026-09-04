@@ -52,9 +52,13 @@ class CorpusDestination(Destination):
     accepts = ("pdf", "md", "txt", "epub", "html")
 
     CONFIG_FIELDS = (
-        Field("base_url", "Corpus URL", "str", "https://corpus.example.org",
-              required=True, placeholder="https://corpus.example.org",
-              help="The instance to upload to."),
+        # No default, and a placeholder that is not anybody's address. A
+        # Corpus instance is a PRIVATE library; baking one installation's
+        # hostname into a public registry publishes it to everyone who reads
+        # the plugin. Required, so the user supplies their own.
+        Field("base_url", "Corpus URL", "str", "", required=True,
+              placeholder="https://corpus.example.org",
+              help="Your Corpus instance. Include the scheme."),
         Field("default_language", "Default language", "str", "",
               placeholder="French",
               help="Used when the project does not say. Left empty, the "
