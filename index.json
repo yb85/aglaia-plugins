@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "api": 1,
+  "generated_at": "2026-09-04T19:48:45Z",
+  "plugins": [
+    {
+      "slug": "send-to-calibre",
+      "kind": "destinations",
+      "name": "calibre library",
+      "version": "1.0.0",
+      "summary": "Add a finished export to a calibre content server's library.",
+      "author": "Aglaïa <aglaia@bibli.cc>",
+      "license": "MIT",
+      "homepage": "https://aglaia.bibli.cc",
+      "source_url": "",
+      "requires": {
+        "aglaia": ">=0.1.0rc5,<0.2",
+        "python": ">=3.12"
+      },
+      "api": 1,
+      "capabilities": {
+        "config": true,
+        "secrets": true,
+        "network": true,
+        "files": false
+      },
+      "imports": [
+        "httpx"
+      ],
+      "files": {
+        "send_to_calibre.py": "sha256:987a55b2b5d33661a65d5e266bf658739978914c588695eadd9b06bad482175a",
+        "aglaia-plugin.toml": "sha256:e6fd406c9515cc67adf0eb93d2f7330c13f0af2f909048f2c3d2b4b4e0fa9fc0",
+        "README.md": "sha256:cf0251ca6c11e4fb511a6b555f6e452cf8c2196261301b111900e44696031849",
+        "LICENSE": "sha256:1ee05128708885ab4c0ace00306a9d4a0e6fd0e7e8464f24cfa665774813bf2e"
+      }
+    },
+    {
+      "slug": "send-to-corpus",
+      "kind": "destinations",
+      "name": "YLIB corpus",
+      "version": "1.0.0",
+      "summary": "Upload a finished export to a YLIB library instance.",
+      "author": "Aglaïa <aglaia@bibli.cc>",
+      "license": "MIT",
+      "homepage": "https://aglaia.bibli.cc",
+      "source_url": "",
+      "requires": {
+        "aglaia": ">=0.1.0rc5,<0.2",
+        "python": ">=3.12"
+      },
+      "api": 1,
+      "capabilities": {
+        "config": true,
+        "secrets": true,
+        "network": true,
+        "files": false
+      },
+      "imports": [
+        "httpx"
+      ],
+      "files": {
+        "send_to_corpus.py": "sha256:ef4a3dad57b61699d3e12c3a7cb92269d71db64f973cef66d3eea3593d917d5c",
+        "aglaia-plugin.toml": "sha256:52c8dd0b1580ea1a4941db3c09ea9c9c237d73421d8ea05f90f2e75729a3557d",
+        "README.md": "sha256:29383e211a21c62ae848849029717d02ac38eb826196209f0c73fa8ba0dedb84",
+        "LICENSE": "sha256:1ee05128708885ab4c0ace00306a9d4a0e6fd0e7e8464f24cfa665774813bf2e"
+      }
+    },
+    {
+      "slug": "send-to-folder",
+      "kind": "destinations",
+      "name": "A folder",
+      "version": "1.0.0",
+      "summary": "Copy the export into a folder — synced, watched, or plain.",
+      "author": "Aglaïa <aglaia@bibli.cc>",
+      "license": "MIT",
+      "homepage": "https://aglaia.bibli.cc",
+      "source_url": "",
+      "requires": {
+        "aglaia": ">=0.1.0rc5,<0.2",
+        "python": ">=3.12"
+      },
+      "api": 1,
+      "capabilities": {
+        "config": true,
+        "secrets": false,
+        "network": false,
+        "files": true
+      },
+      "imports": [],
+      "files": {
+        "send_to_folder.py": "sha256:889016e94503bae1f2e39b625c8a7418e7706c2fb4560759a7ef033266a8dfea",
+        "aglaia-plugin.toml": "sha256:9f26953e5c31107dd765cbb904d3632eb8b6771753a0be1a3a208d8e6fe45484",
+        "README.md": "sha256:cccc10932f745a849d89e3386e0964a054dc0857aa66b79bbd5adb22e9098672",
+        "LICENSE": "sha256:1ee05128708885ab4c0ace00306a9d4a0e6fd0e7e8464f24cfa665774813bf2e"
+      }
+    },
+    {
+      "slug": "send-to-kindle",
+      "kind": "destinations",
+      "name": "Kindle (email)",
+      "version": "1.0.0",
+      "summary": "Mail a finished export to a Kindle address.",
+      "author": "Aglaïa <aglaia@bibli.cc>",
+      "license": "MIT",
+      "homepage": "https://aglaia.bibli.cc",
+      "source_url": "",
+      "requires": {
+        "aglaia": ">=0.1.0rc5,<0.2",
+        "python": ">=3.12"
+      },
+      "api": 1,
+      "capabilities": {
+        "config": true,
+        "secrets": true,
+        "network": true,
+        "files": false
+      },
+      "imports": [],
+      "files": {
+        "send_to_kindle.py": "sha256:8f018fb728809a03d28f24769b97c60bad08935356496ccae93df933b69e5ddf",
+        "aglaia-plugin.toml": "sha256:7a562c322833de6e6e3acb86d30db819cef91e48f2145637c0692522a679e365",
+        "README.md": "sha256:ffc30720bb979d863df771a520bc3693aef2b895b886ee17932c072a30b83183",
+        "LICENSE": "sha256:1ee05128708885ab4c0ace00306a9d4a0e6fd0e7e8464f24cfa665774813bf2e"
+      }
+    }
+  ],
+  "revoked": []
+}

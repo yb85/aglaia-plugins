@@ -1,0 +1,21 @@
+[plugin]
+slug     = "send-to-folder"
+name     = "A folder"
+version  = "1.0.0"
+summary  = "Copy the export into a folder — synced, watched, or plain."
+author   = "Aglaïa <aglaia@bibli.cc>"
+homepage = "https://aglaia.bibli.cc"
+license  = "MIT"
+entry    = "send_to_folder.py"
+
+[requires]
+aglaia  = ">=0.1.0rc5,<0.2"
+python  = ">=3.12"
+api     = 1
+imports = []
+
+[capabilities]
+config  = true
+secrets = false
+network = false
+files   = true

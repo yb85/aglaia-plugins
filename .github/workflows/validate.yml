@@ -1,0 +1,38 @@
+name: validate
+
+# Every rule a human should not have to check by hand. The point is to keep a
+# reviewer's attention for the questions only a person can answer.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: registry }
+      - uses: actions/checkout@v4
+        with: { repository: yb85/aglaia, path: aglaia }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - name: No compiled artefacts, no vendored deps
+        working-directory: registry
+        run: |
+          if find . -path ./.git -prune -o \( -name '*.so' -o -name '*.dylib' \
+               -o -name '*.pyd' -o -name '*.dll' -o -name '*.exe' \) -print \
+               | grep .; then
+            echo "::error::compiled artefacts cannot be reviewed by reading them"
+            exit 1
+          fi
+          if grep -rIn --include='*.py' -E '\b(pip|uv) +install\b' . ; then
+            echo "::error::no plugin installs a dependency"
+            exit 1
+          fi
+
+      - name: Manifests, import scan, and a current index
+        run: |
+          python -m pip install -q numpy opencv-python-headless
+          python aglaia/scripts/build_plugin_index.py registry --check
