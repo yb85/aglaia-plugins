@@ -1,0 +1,22 @@
+[plugin]
+slug     = "stamp-remover"
+name     = "Stamp remover"
+version  = "1.0.0"
+summary  = "Find a library stamp by SIFT and erase it before binarisation."
+author   = "Aglaïa <aglaia@bibli.cc>"
+homepage = "https://aglaia.bibli.cc"
+license  = "MIT"
+entry    = "stamp_remover.py"
+
+[requires]
+aglaia  = ">=0.1.0rc5,<0.2"
+python  = ">=3.12"
+api     = 1
+imports = ["cv2", "numpy", "PySide6"]
+
+[capabilities]
+config  = true
+secrets = false
+network = false
+files   = false
+ui      = true
