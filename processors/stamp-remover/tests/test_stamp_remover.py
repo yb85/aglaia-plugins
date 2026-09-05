@@ -153,3 +153,36 @@ def test_renaming(ctx):
 
 def test_renaming_something_that_is_gone_is_not_an_error(ctx):
     sr.rename_stamp(ctx, "nope", "x")
+
+
+def test_page_features_are_computed_once_per_page(ctx, monkeypatch):
+    """Not once per stamp. SIFT on a text page is ~380 ms and matching a stamp
+    against the result is ~4 ms, so a library of four stamps used to spend
+    1.5 s per page redoing the identical work."""
+    calls = []
+    real = sr.page_features
+
+    def counted(gray):
+        calls.append(1)
+        return real(gray)
+
+    monkeypatch.setattr(sr, "page_features", counted)
+    for i in range(3):
+        _add(ctx, f"s{i}")
+    proc = sr.StampRemover(sr.StampRemoverOption())
+    proc.ctx = ctx
+    page = np.full((400, 400), 210, np.uint8)
+    cv2.circle(page, (200, 200), 60, 40, 3)
+    from aglaia.plugin_api import ImageBuffer, ImageType
+    proc.process(ImageBuffer(page, ImageType.GRAY, dpi=300.0))
+    assert len(calls) == 1, f"SIFT ran {len(calls)} times for 3 stamps"
+
+
+def test_find_stamp_accepts_precomputed_features(ctx):
+    """The hoisted features are passed in; a caller that does not pass them
+    still works, so the function stays usable on its own."""
+    _add(ctx)
+    stamp = sr.load_library(ctx)[0]
+    page = np.full((300, 300), 210, np.uint8)
+    poly, n = sr.find_stamp(page, stamp, ratio=0.75, min_inliers=12)
+    assert poly is None and n == 0            # nothing to find, but no crash

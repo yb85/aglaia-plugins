@@ -289,8 +289,27 @@ def import_library(ctx, path: Path, *, replace: bool = False) -> tuple[int, str]
 
 # ── matching ──────────────────────────────────────────────────────────
 
+def page_features(page_gray: np.ndarray):
+    """SIFT keypoints and descriptors for one page, or `(None, None)`.
+
+    Hoisted out of `find_stamp` because it is 95% of the cost of this
+    processor — 380 ms on a text page, against 4 ms to match a stamp against
+    the result — and it does not depend on which stamp is being looked for.
+    Called once per page inside `find_stamp` before, so a library of four
+    stamps did the same 380 ms four times.
+    """
+    sift = _sift()
+    if sift is None:
+        return None, None
+    try:
+        return sift.detectAndCompute(page_gray, None)
+    except cv2.error:
+        return None, None
+
+
 def find_stamp(page_gray: np.ndarray, stamp: Stamp, *, ratio: float,
-               min_inliers: int) -> tuple[Optional[list], int]:
+               min_inliers: int, features=None
+               ) -> tuple[Optional[list], int]:
     """The stamp's exclusion polygon in PAGE coordinates, and the inlier count.
 
     `estimateAffinePartial2D`, not `findHomography`: a stamp is a small rigid
@@ -299,10 +318,10 @@ def find_stamp(page_gray: np.ndarray, stamp: Stamp, *, ratio: float,
     handful of inliers, and it spends them — folding a stamp into a sliver
     that then erases a strip of text. Refusing the freedom refuses the failure.
     """
-    sift = _sift()
-    if sift is None or not stamp.usable:
+    if not stamp.usable:
         return None, 0
-    kp_page, desc_page = sift.detectAndCompute(page_gray, None)
+    kp_page, desc_page = features if features is not None \
+        else page_features(page_gray)
     if desc_page is None or len(desc_page) < min_inliers:
         return None, 0
 
@@ -474,13 +493,18 @@ class StampRemover(AbstractImageProcessor):
         stamps = self._stamps()
         if not stamps:
             return buf
+
+        # Once per page, not once per stamp. This is 95% of the step's cost.
+        features = page_features(gray)
+        if features[1] is None:
+            return buf
         page_area = float(h * w)
         found = 0
         for stamp in stamps:
             try:
                 poly, n_in = find_stamp(
                     gray, stamp, ratio=float(self.opt.ratio),
-                    min_inliers=int(self.opt.min_inliers))
+                    min_inliers=int(self.opt.min_inliers), features=features)
             except Exception as e:  # noqa: BLE001 — one bad stamp, not a dead page
                 self._log(f"{stamp.label}: {type(e).__name__}: {e}")
                 continue

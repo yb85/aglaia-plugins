@@ -1,7 +1,7 @@
 [plugin]
 slug     = "stamp-remover"
 name     = "Stamp remover"
-version = "1.2.0"
+version = "1.3.0"
 summary  = "Find a library stamp by SIFT and erase it before binarisation."
 author   = "Aglaïa <aglaia@bibli.cc>"
 homepage = "https://aglaia.bibli.cc"
