@@ -88,6 +88,38 @@ removes the supply-chain surface, and it is why the import list can be closed.
 That last one is the real question, and it is why this registry is small on
 purpose.
 
+## Writing the text the user reads
+
+Your `Field(help=…)`, your `CheckResult` and your `SendResult` messages are the
+plugin, as far as most people are concerned. Aglaïa has a written guide with the
+evidence behind each rule — <https://aglaia.bibli.cc/docs/reference/ui-writing/>
+— and a review will hold you to it. The short version:
+
+**Write for the person using the plugin, not for whoever reads its source.**
+Everything about how it works goes in the log.
+
+* **Say the consequence, not the mechanism.** "Changes require reconfiguration
+  of your email client", not a definition of a port.
+* **Never name an environment variable, an HTTP header, a class or a config
+  file** in a field's help. The user did not set it and cannot find it.
+* **Never explain why your default is what it is.** State the limit, not how you
+  picked it.
+* **Where a secret is stored is Aglaïa's job to say**, once, above the secret
+  fields. Do not repeat it per field.
+* **Give a literal example, not a format description.** `Example:
+  https://books.example.org` beats a sentence about URL syntax.
+* **Units in the label, in parentheses**: `Timeout (seconds)`.
+* **Always spell out the sentinel**: "Set to 0 for no limit."
+* **Distinguish your failures.** Cannot reach / credentials rejected /
+  authenticated but not permitted have three different fixes; a `CheckResult`
+  that collapses them into "connection failed" wastes the user's afternoon.
+  Put the raw error under a `Details:` label, never as the whole message.
+* **Never assign blame,** and never confirm which half of a credential was
+  wrong.
+
+Budgets: field help 10-15 words (25 hard cap), result messages 6-9. Sentence
+case, no colon on labels, `…` never `...`.
+
 ## Writing a destination
 
 Start from [send-to-folder](destinations/send-to-folder): no secrets, no
