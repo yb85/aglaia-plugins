@@ -53,8 +53,8 @@ import numpy as np
 
 from aglaia.plugin_api import (
     AbstractImageProcessor, AbstractProcessorOption, ImageBuffer, PluginWindow,
-    ReplayTrait, add_erase, option_bool, option_float, option_int,
-    register_window, to_gray,
+    ReplayTrait, add_erase, manual_erase, option_bool, option_float,
+    option_int, register_debug_renderer, register_window, to_gray,
 )
 
 SLUG = "stamp-remover"
@@ -166,12 +166,125 @@ def save_stamp(ctx, image: np.ndarray, polygon: list, label: str = "") -> str:
     return sid
 
 
+def rename_stamp(ctx, stamp_id: str, label: str) -> None:
+    """Give a stamp a name.
+
+    Everything was called "stamp", which is fine with one and useless with
+    four: the name is what the log line says when a match is found, what the
+    debug view labels the mask with, and how you know which entry to remove
+    when a library has an ex-libris, a date stamp and two accession marks in
+    it."""
+    d = library_dir(ctx)
+    meta_path = d / f"{stamp_id}.json"
+    if not meta_path.is_file():
+        return
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    meta["label"] = str(label).strip() or stamp_id
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False),
+                         encoding="utf-8")
+
+
 def delete_stamp(ctx, stamp_id: str) -> None:
     d = library_dir(ctx)
     for suffix in (".png", ".json", ".npz"):
         f = d / f"{stamp_id}{suffix}"
         if f.is_file():
             f.unlink()
+
+
+# ── import / export ───────────────────────────────────────────────────
+#
+# One JSON file carrying everything: a library is worth moving between
+# machines, sharing with whoever scans the other half of a collection, and
+# keeping a copy of before an experiment. A directory of PNGs and sidecars is
+# not something anyone will zip by hand reliably, so the images travel inside
+# the file as base64 — bigger than a zip and openable in a text editor, which
+# for a handful of small snippets is the better trade.
+#
+# Descriptors are NOT exported: they are a cache, they are large, and they are
+# recomputed on first use. An export should carry what cannot be derived.
+
+EXPORT_VERSION = 1
+
+
+def export_library(ctx, path: Path) -> int:
+    """Write the whole library to one JSON file. Returns the stamp count."""
+    import base64
+    d = library_dir(ctx)
+    stamps = []
+    for meta_path in sorted(d.glob("*.json")):
+        img_path = d / f"{meta_path.stem}.png"
+        if not img_path.is_file():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        stamps.append({
+            "id": meta_path.stem,
+            "label": str(meta.get("label") or meta_path.stem),
+            "polygon": [[float(x), float(y)]
+                        for x, y in (meta.get("polygon") or [])],
+            "png_base64": base64.b64encode(
+                img_path.read_bytes()).decode("ascii"),
+        })
+    Path(path).write_text(
+        json.dumps({"kind": "aglaia.stamp-library",
+                    "version": EXPORT_VERSION,
+                    "stamps": stamps}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
+    return len(stamps)
+
+
+def import_library(ctx, path: Path, *, replace: bool = False) -> tuple[int, str]:
+    """Read stamps from a JSON file. Returns `(imported, error)`.
+
+    Adds by default rather than replacing: importing a colleague's library
+    should not silently discard your own. `replace=True` is the explicit
+    other choice.
+
+    Every stamp is validated BEFORE anything is written — a file that is going
+    to be rejected should not leave half a library behind."""
+    import base64
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        return 0, f"This file could not be read: {type(e).__name__}."
+    if not isinstance(data, dict) or data.get("kind") != "aglaia.stamp-library":
+        return 0, "This is not a stamp library file."
+    if int(data.get("version") or 0) > EXPORT_VERSION:
+        return 0, ("This library was written by a newer version of the "
+                   "plugin. Update it and try again.")
+
+    staged = []
+    for entry in (data.get("stamps") or []):
+        if not isinstance(entry, dict):
+            continue
+        poly = [[float(x), float(y)] for x, y in (entry.get("polygon") or [])]
+        if len(poly) < 3:
+            continue
+        try:
+            raw = base64.b64decode(entry.get("png_base64") or "", validate=True)
+            img = cv2.imdecode(np.frombuffer(raw, np.uint8),
+                               cv2.IMREAD_GRAYSCALE)
+        except Exception:
+            img = None
+        if img is None or img.size == 0:
+            continue
+        staged.append((img, poly, str(entry.get("label") or "stamp")))
+    if not staged:
+        return 0, "This file contains no usable stamps."
+
+    if replace:
+        for f in library_dir(ctx).glob("*"):
+            if f.suffix in (".png", ".json", ".npz"):
+                f.unlink(missing_ok=True)
+    for img, poly, label in staged:
+        save_stamp(ctx, img, poly, label)
+    return len(staged), ""
 
 
 # ── matching ──────────────────────────────────────────────────────────
@@ -278,12 +391,26 @@ class StampRemover(AbstractImageProcessor):
     def process(self, buf: ImageBuffer) -> ImageBuffer:
         if not self.opt.enabled:
             return buf
-        stamps = self._stamps()
-        if not stamps:
-            return buf
 
         gray = to_gray(buf.buffer)
         h, w = gray.shape[:2]
+
+        # A hand-edited set REPLACES detection for this page. That is what
+        # makes an edit stick: a region the user deleted must not be found
+        # again on the next run, and one they drew must survive it. An empty
+        # list is a decision too — it means "nothing here" — so it is
+        # honoured, while None means "no override, decide for yourself".
+        manual = manual_erase(buf.meta, frame_wh=(w, h))
+        if manual is not None:
+            for poly in manual:
+                self._add_erase(buf, poly, "manual")
+            buf.meta["stamps_found"] = 0
+            self._log(f"{len(manual)} region(s) set by hand; detection skipped")
+            return buf
+
+        stamps = self._stamps()
+        if not stamps:
+            return buf
         page_area = float(h * w)
         found = 0
         for stamp in stamps:
@@ -333,7 +460,8 @@ def _make_window(ctx):
     from PySide6.QtCore import QPointF, Qt
     from PySide6.QtGui import QImage, QPainter, QPen, QPixmap, QPolygonF, QColor
     from PySide6.QtWidgets import (
-        QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+        QFileDialog, QHBoxLayout, QInputDialog, QLabel, QListWidget,
+        QListWidgetItem,
         QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
     class PolygonCanvas(QLabel):
@@ -447,6 +575,17 @@ def _make_window(ctx):
             del_btn.clicked.connect(self._delete)
             row.addWidget(del_btn)
             left.addLayout(row)
+            row2 = QHBoxLayout()
+            ren_btn = QPushButton("Rename…")
+            ren_btn.clicked.connect(self._rename)
+            row2.addWidget(ren_btn)
+            imp_btn = QPushButton("Import…")
+            imp_btn.clicked.connect(self._import)
+            row2.addWidget(imp_btn)
+            exp_btn = QPushButton("Export…")
+            exp_btn.clicked.connect(self._export)
+            row2.addWidget(exp_btn)
+            left.addLayout(row2)
             root.addLayout(left)
 
             right = QVBoxLayout()
@@ -523,7 +662,18 @@ def _make_window(ctx):
                         f"this snippet — too few to match reliably. Use a "
                         f"larger or sharper crop of the stamp.")
                     return
-            save_stamp(self.ctx, self._pending, self.canvas.points)
+            # Named at the moment it is created, when the user is looking at
+            # it and knows what it is. Asking later never happens, and a
+            # library of four things all called "stamp" is a library you
+            # cannot prune.
+            label, ok = QInputDialog.getText(
+                self, "Name this stamp",
+                "A name you will recognise later — it appears in the log and "
+                "on the debug view:", text="stamp")
+            if not ok:
+                return
+            save_stamp(self.ctx, self._pending, self.canvas.points,
+                       label.strip() or "stamp")
             self._pending = None
             self.canvas.clear()
             self.refresh()
@@ -535,7 +685,150 @@ def _make_window(ctx):
             delete_stamp(self.ctx, item.data(Qt.ItemDataRole.UserRole))
             self.refresh()
 
+        def _rename(self) -> None:
+            item = self.list.currentItem()
+            if item is None:
+                QMessageBox.information(self, "Stamp library",
+                                        "Select a stamp first.")
+                return
+            sid = item.data(Qt.ItemDataRole.UserRole)
+            current = next((st.label for st in load_library(self.ctx)
+                            if st.stamp_id == sid), "")
+            label, ok = QInputDialog.getText(self, "Rename stamp",
+                                             "Name:", text=current)
+            if ok and label.strip():
+                rename_stamp(self.ctx, sid, label)
+                self.refresh()
+
+        def _export(self) -> None:
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Export stamp library", "stamps.json",
+                "Stamp library (*.json)")
+            if not path:
+                return
+            try:
+                n = export_library(self.ctx, Path(path))
+            except OSError as e:
+                QMessageBox.warning(self, "Stamp library",
+                                    f"Could not write the file: {e.strerror}.")
+                return
+            QMessageBox.information(
+                self, "Stamp library",
+                f"{n} stamp(s) exported." if n
+                else "The library is empty — nothing was exported.")
+
+        def _import(self) -> None:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "Import stamp library", "", "Stamp library (*.json)")
+            if not path:
+                return
+            replace = False
+            if load_library(self.ctx):
+                # Adding is the default because it cannot lose anything;
+                # replacing is offered, and named for what it does.
+                box = QMessageBox(self)
+                box.setWindowTitle("Import stamp library")
+                box.setText("You already have stamps in this library.")
+                add = box.addButton("Add to it", QMessageBox.ButtonRole.AcceptRole)
+                rep = box.addButton("Replace it", QMessageBox.ButtonRole.DestructiveRole)
+                box.addButton(QMessageBox.StandardButton.Cancel)
+                box.setDefaultButton(add)
+                box.exec()
+                if box.clickedButton() is rep:
+                    replace = True
+                elif box.clickedButton() is not add:
+                    return
+            n, err = import_library(self.ctx, Path(path), replace=replace)
+            if err:
+                QMessageBox.warning(self, "Stamp library", err)
+                return
+            self.refresh()
+            QMessageBox.information(self, "Stamp library",
+                                    f"{n} stamp(s) imported.")
+
     return StampLibraryWindow(ctx)
+
+
+# ── the debug pane ────────────────────────────────────────────────────
+
+def _debug_renderer(img, parent, meta):
+    """What the matcher saw and what it decided.
+
+    Three things, in the order they matter. The erase polygons, filled and
+    outlined, because that is the output. The SIFT keypoints, as small
+    crosshairs, because when a stamp is NOT found the question is always
+    whether there were features to match at all — a blurred or over-exposed
+    crop gives twenty, a good one gives three hundred, and that is visible at
+    a glance and invisible any other way. Then a one-line verdict.
+
+    Keypoints are recomputed here rather than carried in meta: they are large,
+    they would ride the whole pipeline in every node's JSON, and the debug
+    view is the only thing that ever wants them.
+    """
+    from aglaia.plugin_api import debug_pane, to_gray
+
+    canvas = img if img.ndim == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    canvas = canvas.copy()
+    gray = to_gray(img)
+    h, w = gray.shape[:2]
+
+    sift = _sift()
+    n_kp = 0
+    if sift is not None:
+        try:
+            kps = list(sift.detect(gray, None))
+            # Report the TRUE count and draw a capped subset: the number is
+            # what tells you whether this page has anything to match on, and
+            # capping it silently would have reported 400 for every page with
+            # more than 400. Strongest first, so the ones drawn are the ones
+            # that carry the match — detection order is arbitrary.
+            n_kp = len(kps)
+            kps.sort(key=lambda k: -k.response)
+            for kp in kps[:_DEBUG_MAX_KEYPOINTS]:
+                x, y = int(kp.pt[0]), int(kp.pt[1])
+                r = max(3, int(kp.size / 4))
+                cv2.line(canvas, (x - r, y), (x + r, y), (90, 190, 255), 1,
+                         cv2.LINE_AA)
+                cv2.line(canvas, (x, y - r), (x, y + r), (90, 190, 255), 1,
+                         cv2.LINE_AA)
+        except cv2.error:
+            pass
+
+    polys = [e["polygon"] if isinstance(e, dict) else e
+             for e in (meta.get("erase") or [])]
+    if polys:
+        # Filled at low alpha so the ink underneath stays readable — the
+        # question the user is answering is whether the polygon covers the
+        # stamp AND clears its edge, and a solid fill hides exactly that.
+        overlay = canvas.copy()
+        for poly in polys:
+            cv2.fillPoly(overlay, [np.int32(poly)], (60, 90, 230))
+        canvas = cv2.addWeighted(overlay, 0.28, canvas, 0.72, 0)
+        for poly in polys:
+            cv2.polylines(canvas, [np.int32(poly)], True, (60, 90, 230), 2,
+                          cv2.LINE_AA)
+
+    found = int(meta.get("stamps_found") or 0)
+    if found:
+        verdict = f"{found} stamp(s) found - {n_kp} keypoints on this page"
+    elif polys:
+        verdict = f"{len(polys)} region(s) set by hand - {n_kp} keypoints"
+    else:
+        verdict = f"no stamp found - {n_kp} keypoints on this page"
+    cv2.rectangle(canvas, (0, 0), (w, 26), (20, 20, 20), -1)
+    cv2.putText(canvas, verdict, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                (235, 235, 235), 1, cv2.LINE_AA)
+
+    # `erase=` makes the regions editable: a trash badge on each, an add
+    # badge in the corner, stored as a manual override for this page.
+    return [debug_pane(canvas, "stamps", erase=polys, frame_wh=(w, h))]
+
+
+#: How many crosshairs to draw. The COUNT in the verdict is always the true
+#: one; this only caps the drawing, past which it is a fog that hides the page.
+_DEBUG_MAX_KEYPOINTS = 400
+
+register_debug_renderer("StampRemover", _debug_renderer)
 
 
 register_window(SLUG, PluginWindow(
