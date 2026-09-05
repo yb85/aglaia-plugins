@@ -108,7 +108,7 @@ class TestImportExport:
         out = tmp_path / "lib.json"
         sr.export_library(ctx, out)
         blob = json.loads(out.read_text(encoding="utf-8"))
-        assert set(blob["stamps"][0]) == {"id", "label", "polygon", "png_base64"}
+        assert set(blob["stamps"][0]) == {"id", "label", "polygon", "png_base64", "dpi"}
 
     def test_a_file_that_is_not_a_library_is_refused(self, ctx, tmp_path):
         bad = tmp_path / "notes.json"
@@ -162,9 +162,9 @@ def test_page_features_are_computed_once_per_page(ctx, monkeypatch):
     calls = []
     real = sr.page_features
 
-    def counted(gray):
+    def counted(gray, *a, **k):
         calls.append(1)
-        return real(gray)
+        return real(gray, *a, **k)
 
     monkeypatch.setattr(sr, "page_features", counted)
     for i in range(3):
@@ -186,3 +186,32 @@ def test_find_stamp_accepts_precomputed_features(ctx):
     page = np.full((300, 300), 210, np.uint8)
     poly, n = sr.find_stamp(page, stamp, ratio=0.75, min_inliers=12)
     assert poly is None and n == 0            # nothing to find, but no crash
+
+
+
+def test_descriptors_are_masked_to_the_traced_polygon(ctx):
+    """Text left in the crop must not become part of the stamp's signature.
+    Two snippets, identical inside the polygon, one with heavy 'text' outside
+    it: the descriptor sets must be (near) the same size — the outside is
+    invisible to the matcher."""
+    base = np.full((200, 200), 210, np.uint8)
+    cv2.circle(base, (100, 100), 50, 30, 3)
+    noisy = base.copy()
+    for y in range(10, 190, 12):                       # 'text' outside the circle
+        noisy[y:y + 4, 5:35] = 20
+        noisy[y:y + 4, 165:195] = 20
+    poly = [[45, 45], [155, 45], [155, 155], [45, 155]]
+    a = sr.save_stamp(ctx, base, poly, "clean", dpi=300)
+    b = sr.save_stamp(ctx, noisy, poly, "noisy", dpi=300)
+    lib = {s.label: s for s in sr.load_library(ctx)}
+    na, nb = len(lib["clean"].descriptors), len(lib["noisy"].descriptors)
+    assert nb <= na * 1.3, f"text outside the polygon added descriptors: {na} -> {nb}"
+
+
+def test_snippet_is_described_at_the_page_scale(ctx):
+    """A 300 dpi snippet searched on a 150 dpi page is described at 0.5x."""
+    img = np.full((200, 200), 210, np.uint8); cv2.circle(img, (100, 100), 60, 30, 4)
+    sr.save_stamp(ctx, img, [[30, 30], [170, 30], [170, 170], [30, 170]], "s", dpi=300)
+    assert sr.load_library(ctx, page_dpi=150)[0].scale == 0.5
+    assert sr.load_library(ctx, page_dpi=300)[0].scale == 1.0
+    assert sr.load_library(ctx, page_dpi=0)[0].scale == 1.0      # unknown → as-is

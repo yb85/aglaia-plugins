@@ -53,11 +53,19 @@ import numpy as np
 
 from aglaia.plugin_api import (
     AbstractImageProcessor, AbstractProcessorOption, ImageBuffer, PluginWindow,
-    ReplayTrait, add_erase, manual_erase, option_bool, option_float,
-    option_int, register_debug_renderer, register_window, to_gray,
+    ReplayTrait, add_erase, manual_erase, option_bool, option_enum,
+    option_float, option_int, register_debug_renderer, register_window,
+    to_gray,
 )
 
 SLUG = "stamp-remover"
+
+# The one meta key this plugin writes besides `erase` (which the host declares).
+try:
+    from aglaia.plugin_api import MetaKind, declare_meta
+    declare_meta("stamps_found", MetaKind.SCALAR)
+except ImportError:          # a host older than the schema: nothing to declare to
+    pass
 
 #: Lowe's ratio. 0.75 is the classic value and it is the right default here:
 #: a stamp is repetitive (rules, circles, repeated letters), so a looser ratio
@@ -77,6 +85,8 @@ class Stamp:
     keypoints: Optional[list] = None
     descriptors: Optional[np.ndarray] = None
     label: str = ""
+    dpi: float = 0.0                  # of the page the snippet was cut from; 0 = unknown
+    scale: float = 1.0                # snippet → search-frame factor the keypoints are in
 
     @property
     def usable(self) -> bool:
@@ -90,24 +100,73 @@ def library_dir(ctx) -> Path:
     return d
 
 
-def _sift():
-    """SIFT, or None on a build without it.
+#: Which detector to use, and the distance its descriptors are compared with.
+#: Measured over the 240 pages of a real book with three stamped pages, at the
+#: NATIVE resolution the step now runs at (139 dpi here, before the DPI
+#: normalise): SIFT finds all three (inliers 100 / 26 / 7, unstamped floor 4-5,
+#: ~80 ms/page); AKAZE misses the hardest one every time (61 / 8 / 0) — a
+#: faint stamp at 139 dpi sits below its Hessian threshold. On an UPSAMPLED
+#: 300 dpi page the order reverses: AKAZE 2e-4 finds 454 / 56 / 16 against a
+#: floor of 4 at 2.5x SIFT's speed, and SIFT's floor rises to 29 because
+#: interpolation artefacts match as spurious keypoints. So: SIFT by default,
+#: AKAZE offered for pipelines that run this step on a high-resolution page.
+DETECTORS = ("sift", "akaze")
 
-    It is patent-free and in the main OpenCV distribution since 4.4, but a
-    stripped build can still lack it — and a plugin that raises on import
-    takes the whole processor registry down with it."""
+
+def _detector(name: str = "sift"):
+    """A feature detector, or None on a build without it.
+
+    SIFT is patent-free and in the main OpenCV distribution since 4.4, but a
+    stripped build can still lack it — and a plugin that raises on import takes
+    the whole processor registry down with it."""
     try:
+        if str(name).lower() == "akaze":
+            return cv2.AKAZE_create(threshold=0.0002)
         return cv2.SIFT_create()
     except Exception:
         return None
 
 
-def load_library(ctx) -> list[Stamp]:
+def _norm(name: str = "sift") -> int:
+    return cv2.NORM_HAMMING if str(name).lower() == "akaze" else cv2.NORM_L2
+
+
+def _sift():
+    """Back-compat for the library window, which only ever needs SIFT."""
+    return _detector("sift")
+
+
+#: Descriptors are computed on the traced polygon grown by this much, so the
+#: keypoints on the stamp's own edge keep their surroundings. Text the user
+#: happened to include in the crop is OUTSIDE this and no longer part of the
+#: signature — which is what it was, silently, and why it matched text.
+MASK_GROW_PX = 8
+
+
+def load_library(ctx, *, detector: str = "sift",
+                 page_dpi: float = 0.0) -> list[Stamp]:
     """Every stamp in the library, with descriptors computed on the way.
 
-    Descriptors are cached beside the image: SIFT on a snippet is cheap, but
-    it is not free, and this runs per page in a worker process."""
-    sift = _sift()
+    Two things about those descriptors, both measured to matter.
+
+    They are **masked to the traced polygon**. The whole snippet used to be
+    described, so any text the user left in the crop became part of the
+    stamp's signature and matched text on every page — the noise floor on
+    unstamped pages was 59 inliers with an untidy crop and 5 with a masked one.
+
+    They are **computed at the scale the page is searched at**. A snippet cut
+    from a 300 dpi page and searched on a 139 dpi page is 2.15x too big; SIFT
+    is scale-invariant in principle, but matching is best when the two are
+    comparable, and a snippet described at the wrong scale is one the coarse
+    octaves see and the fine ones do not. Needs the snippet's dpi, which
+    `save_stamp` records; without it, no scaling.
+
+    Cached beside the image, keyed by detector and scale — a change of either
+    is a different descriptor set. Detection on a snippet is cheap, but this
+    runs per page in a worker process and the cache is what keeps it out of
+    the per-page cost.
+    """
+    det = _detector(detector)
     out: list[Stamp] = []
     d = library_dir(ctx)
     for meta_path in sorted(d.glob("*.json")):
@@ -121,11 +180,17 @@ def load_library(ctx) -> list[Stamp]:
         img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
         if img is None:
             continue
+        sdpi = float(meta.get("dpi") or 0.0)
+        scale = 1.0
+        if sdpi > 0 and page_dpi > 0 and abs(page_dpi / sdpi - 1.0) > 0.05:
+            scale = float(page_dpi / sdpi)
         stamp = Stamp(stamp_id=meta_path.stem, image=img,
                       polygon=list(meta.get("polygon") or []),
-                      label=str(meta.get("label") or meta_path.stem))
-        if sift is not None:
-            cache = d / f"{meta_path.stem}.npz"
+                      label=str(meta.get("label") or meta_path.stem),
+                      dpi=sdpi, scale=scale)
+        if det is not None and len(stamp.polygon) >= 3:
+            tag = f"{detector}_{scale:.3f}"
+            cache = d / f"{meta_path.stem}.{tag}.npz"
             desc = None
             if cache.is_file():
                 try:
@@ -137,7 +202,15 @@ def load_library(ctx) -> list[Stamp]:
                 except Exception:
                     desc = None
             if desc is None:
-                kps, desc = sift.detectAndCompute(img, None)
+                work = img if scale == 1.0 else cv2.resize(
+                    img, None, fx=scale, fy=scale,
+                    interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC)
+                mask = np.zeros(work.shape, np.uint8)
+                cv2.fillPoly(mask, [np.int32(np.float32(stamp.polygon) * scale)], 255)
+                k = MASK_GROW_PX * 2 + 1
+                mask = cv2.dilate(mask, cv2.getStructuringElement(
+                    cv2.MORPH_ELLIPSE, (k, k)))
+                kps, desc = det.detectAndCompute(work, mask)
                 stamp.keypoints = list(kps)
                 if desc is not None and len(kps):
                     try:
@@ -151,8 +224,13 @@ def load_library(ctx) -> list[Stamp]:
     return out
 
 
-def save_stamp(ctx, image: np.ndarray, polygon: list, label: str = "") -> str:
-    """Add one stamp to the library. Returns its id."""
+def save_stamp(ctx, image: np.ndarray, polygon: list, label: str = "",
+               dpi: float = 0.0) -> str:
+    """Add one stamp to the library. Returns its id.
+
+    `dpi` is that of the page the snippet was cut from, when known. It lets
+    the descriptors be computed at the scale of the page being searched; left
+    at 0 the snippet is used as-is."""
     import uuid
     d = library_dir(ctx)
     sid = uuid.uuid4().hex[:12]
@@ -161,7 +239,8 @@ def save_stamp(ctx, image: np.ndarray, polygon: list, label: str = "") -> str:
     cv2.imwrite(str(d / f"{sid}.png"), gray)
     (d / f"{sid}.json").write_text(
         json.dumps({"polygon": [[float(x), float(y)] for x, y in polygon],
-                    "label": label or "stamp"}, ensure_ascii=False),
+                    "label": label or "stamp",
+                    "dpi": float(dpi or 0.0)}, ensure_ascii=False),
         encoding="utf-8")
     return sid
 
@@ -226,6 +305,7 @@ def export_library(ctx, path: Path) -> int:
         stamps.append({
             "id": meta_path.stem,
             "label": str(meta.get("label") or meta_path.stem),
+            "dpi": float(meta.get("dpi") or 0.0),
             "polygon": [[float(x), float(y)]
                         for x, y in (meta.get("polygon") or [])],
             "png_base64": base64.b64encode(
@@ -274,7 +354,8 @@ def import_library(ctx, path: Path, *, replace: bool = False) -> tuple[int, str]
             img = None
         if img is None or img.size == 0:
             continue
-        staged.append((img, poly, str(entry.get("label") or "stamp")))
+        staged.append((img, poly, str(entry.get("label") or "stamp"),
+                       float(entry.get("dpi") or 0.0)))
     if not staged:
         return 0, "This file contains no usable stamps."
 
@@ -282,15 +363,15 @@ def import_library(ctx, path: Path, *, replace: bool = False) -> tuple[int, str]
         for f in library_dir(ctx).glob("*"):
             if f.suffix in (".png", ".json", ".npz"):
                 f.unlink(missing_ok=True)
-    for img, poly, label in staged:
-        save_stamp(ctx, img, poly, label)
+    for img, poly, label, dpi in staged:
+        save_stamp(ctx, img, poly, label, dpi)
     return len(staged), ""
 
 
 # ── matching ──────────────────────────────────────────────────────────
 
-def page_features(page_gray: np.ndarray):
-    """SIFT keypoints and descriptors for one page, or `(None, None)`.
+def page_features(page_gray: np.ndarray, detector: str = "sift"):
+    """Keypoints and descriptors for one page, or `(None, None)`.
 
     Hoisted out of `find_stamp` because it is 95% of the cost of this
     processor — 380 ms on a text page, against 4 ms to match a stamp against
@@ -298,17 +379,17 @@ def page_features(page_gray: np.ndarray):
     Called once per page inside `find_stamp` before, so a library of four
     stamps did the same 380 ms four times.
     """
-    sift = _sift()
-    if sift is None:
+    det = _detector(detector)
+    if det is None:
         return None, None
     try:
-        return sift.detectAndCompute(page_gray, None)
+        return det.detectAndCompute(page_gray, None)
     except cv2.error:
         return None, None
 
 
 def find_stamp(page_gray: np.ndarray, stamp: Stamp, *, ratio: float,
-               min_inliers: int, features=None
+               min_inliers: int, features=None, detector: str = "sift"
                ) -> tuple[Optional[list], int]:
     """The stamp's exclusion polygon in PAGE coordinates, and the inlier count.
 
@@ -321,11 +402,11 @@ def find_stamp(page_gray: np.ndarray, stamp: Stamp, *, ratio: float,
     if not stamp.usable:
         return None, 0
     kp_page, desc_page = features if features is not None \
-        else page_features(page_gray)
+        else page_features(page_gray, detector)
     if desc_page is None or len(desc_page) < min_inliers:
         return None, 0
 
-    matcher = cv2.BFMatcher()
+    matcher = cv2.BFMatcher(_norm(detector))
     try:
         pairs = matcher.knnMatch(stamp.descriptors, desc_page, k=2)
     except cv2.error:
@@ -346,7 +427,7 @@ def find_stamp(page_gray: np.ndarray, stamp: Stamp, *, ratio: float,
     if M is None or n_in < min_inliers:
         return None, n_in
 
-    poly = np.float32(stamp.polygon).reshape(-1, 1, 2)
+    poly = (np.float32(stamp.polygon) * float(stamp.scale)).reshape(-1, 1, 2)
     return cv2.transform(poly, M).reshape(-1, 2).tolist(), n_in
 
 
@@ -409,9 +490,10 @@ _SIMPLIFY_FRAC = 0.01
 @dataclass
 class StampRemoverOption(AbstractProcessorOption):
     ratio: float = DEFAULT_RATIO
-    min_inliers: int = 12
+    min_inliers: int = 6
     max_area_frac: float = 0.25
     margin_mm: float = 1.0
+    detector: str = "sift"
     enabled: bool = True
 
 
@@ -436,9 +518,17 @@ class StampRemover(AbstractImageProcessor):
             "(rules, circles, repeated letters), so a loose ratio floods the "
             "match set with ambiguous pairs and RANSAC then fits noise."),
         "min_inliers": option_int(
-            12, 4, 200,
+            6, 4, 200,
             "Matches that must survive RANSAC before a stamp counts as found. "
-            "The single knob between 'missed it' and 'erased a paragraph'."),
+            "The single knob between 'missed it' and 'erased a paragraph'. "
+            "At native scan resolution a clear stamp scores 25-100 and a "
+            "clean page 4-5; a stamp clipped by the page edge can score 7."),
+        "detector": option_enum(
+            "sift", list(DETECTORS),
+            "SIFT finds a faint stamp at native resolution; AKAZE is 2.5x "
+            "faster and more selective on a page of 300 dpi or more but "
+            "misses faint stamps below that. Match it to where in the "
+            "pipeline this step runs."),
         "max_area_frac": option_float(
             0.25, 0.01, 1.0, 0.05,
             "Refuse a match whose polygon covers more than this fraction of "
@@ -463,11 +553,17 @@ class StampRemover(AbstractImageProcessor):
         super().__init__(options)
         self.opt = options
         self._library: Optional[list] = None
+        self._library_key = None
         self.uses_gpu = False
 
-    def _stamps(self) -> list:
-        if self._library is None:
-            self._library = load_library(self.ctx) if self.ctx else []
+    def _stamps(self, page_dpi: float = 0.0) -> list:
+        # Keyed by the page dpi: a library described for a 300 dpi page is
+        # the wrong description for a 139 dpi one, and a project can mix.
+        key = (str(self.opt.detector), round(float(page_dpi or 0.0), 1))
+        if self._library is None or self._library_key != key:
+            self._library = (load_library(self.ctx, detector=key[0],
+                                          page_dpi=key[1]) if self.ctx else [])
+            self._library_key = key
         return self._library
 
     def process(self, buf: ImageBuffer) -> ImageBuffer:
@@ -490,12 +586,12 @@ class StampRemover(AbstractImageProcessor):
             self._log(f"{len(manual)} region(s) set by hand; detection skipped")
             return buf
 
-        stamps = self._stamps()
+        stamps = self._stamps(float(getattr(buf, "dpi", 0) or 0))
         if not stamps:
             return buf
 
         # Once per page, not once per stamp. This is 95% of the step's cost.
-        features = page_features(gray)
+        features = page_features(gray, str(self.opt.detector))
         if features[1] is None:
             return buf
         page_area = float(h * w)
@@ -504,7 +600,8 @@ class StampRemover(AbstractImageProcessor):
             try:
                 poly, n_in = find_stamp(
                     gray, stamp, ratio=float(self.opt.ratio),
-                    min_inliers=int(self.opt.min_inliers), features=features)
+                    min_inliers=int(self.opt.min_inliers), features=features,
+                    detector=str(self.opt.detector))
             except Exception as e:  # noqa: BLE001 — one bad stamp, not a dead page
                 self._log(f"{stamp.label}: {type(e).__name__}: {e}")
                 continue
