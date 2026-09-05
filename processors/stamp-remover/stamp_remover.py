@@ -364,8 +364,25 @@ def expand_polygon(poly, px: float, shape) -> list:
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not cnts:
         return list(poly)
-    big = max(cnts, key=cv2.contourArea).reshape(-1, 2) + [x0, y0]
-    return [[float(x), float(y)] for x, y in big]
+    big = max(cnts, key=cv2.contourArea)
+    # Simplify. A traced contour follows the mask pixel by pixel — a 1 mm
+    # margin on a 240 px stamp came back with 38 vertices and a 3 mm one with
+    # 98, which is a fringe of overlapping drag handles rather than a shape
+    # anyone can edit. The tolerance is a fraction of the perimeter, so it
+    # scales with the stamp instead of being a pixel count that means
+    # something different at every DPI.
+    eps = max(1.0, _SIMPLIFY_FRAC * cv2.arcLength(big, True))
+    big = cv2.approxPolyDP(big, eps, True)
+    pts = big.reshape(-1, 2) + [x0, y0]
+    if len(pts) < 3:
+        return list(poly)
+    return [[float(x), float(y)] for x, y in pts]
+
+
+#: Douglas-Peucker tolerance, as a fraction of the polygon's perimeter. 1%
+#: keeps a circle recognisably round (~20 vertices) while dropping the
+#: pixel-staircase between them.
+_SIMPLIFY_FRAC = 0.01
 
 
 # ── the processor ─────────────────────────────────────────────────────
