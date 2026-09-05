@@ -331,6 +331,43 @@ def find_stamp(page_gray: np.ndarray, stamp: Stamp, *, ratio: float,
     return cv2.transform(poly, M).reshape(-1, 2).tolist(), n_in
 
 
+def expand_polygon(poly, px: float, shape) -> list:
+    """`poly` grown outward by `px` pixels, as a polygon.
+
+    Done by dilating a mask rather than by offsetting the vertices from a
+    centroid: a centroid offset is only correct for a convex shape, and it
+    turns a concave one inside out — which is exactly what a hand-traced
+    stamp outline is once someone has clipped a corner.
+
+    Returns the input unchanged if there is nothing to do, or if the dilation
+    somehow yields no contour: a margin that fails is not worth losing the
+    mask over.
+    """
+    if px <= 0.5 or len(poly) < 3:
+        return list(poly)
+    h, w = int(shape[0]), int(shape[1])
+    pts = np.int32(poly)
+    # Work in a padded local window, not the whole page: the page can be
+    # 2000x3000 and the stamp 250x250, and the mask is allocated per call.
+    pad = int(px) + 4
+    x0 = max(0, int(pts[:, 0].min()) - pad)
+    y0 = max(0, int(pts[:, 1].min()) - pad)
+    x1 = min(w, int(pts[:, 0].max()) + pad)
+    y1 = min(h, int(pts[:, 1].max()) + pad)
+    if x1 <= x0 or y1 <= y0:
+        return list(poly)
+    mask = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    cv2.fillPoly(mask, [pts - [x0, y0]], 255)
+    k = int(px) * 2 + 1
+    mask = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                                      (k, k)))
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return list(poly)
+    big = max(cnts, key=cv2.contourArea).reshape(-1, 2) + [x0, y0]
+    return [[float(x), float(y)] for x, y in big]
+
+
 # ── the processor ─────────────────────────────────────────────────────
 
 @dataclass
@@ -338,6 +375,7 @@ class StampRemoverOption(AbstractProcessorOption):
     ratio: float = DEFAULT_RATIO
     min_inliers: int = 12
     max_area_frac: float = 0.25
+    margin_mm: float = 1.0
     enabled: bool = True
 
 
@@ -370,6 +408,14 @@ class StampRemover(AbstractImageProcessor):
             "Refuse a match whose polygon covers more than this fraction of "
             "the page. A degenerate fit is large before it is anything else, "
             "so this catches one before it erases the text.", advanced=True),
+        "margin_mm": option_float(
+            1.0, 0.0, 10.0, 0.5,
+            "Widen the removal by this much all round, in millimetres. A "
+            "stamp is rarely as crisp as the snippet it was traced from — it "
+            "is inked heavier on one page, printed at a slight angle on "
+            "another — and the last fraction of a millimetre of its rim is "
+            "what the binariser turns into a ring of specks. In millimetres "
+            "rather than pixels so it means the same thing at every DPI."),
         "enabled": option_bool(
             True, "Off: the step passes through, so it can be disabled per "
                   "page from the scan views like any other."),
@@ -441,6 +487,14 @@ class StampRemover(AbstractImageProcessor):
     # -- host plumbing, kept behind one method each so the pipeline API can
     #    move without touching the matching code above.
     def _add_erase(self, buf, poly, label: str) -> None:
+        # The margin belongs to the REMOVAL, not to the detection, so it is
+        # applied here — to a hand-drawn region as much as to a matched one.
+        # Someone tracing a polygon by eye leaves the same sliver of rim
+        # behind that a slightly-off match does.
+        mm = float(getattr(self.opt, "margin_mm", 0.0) or 0.0)
+        dpi = float(getattr(buf, "dpi", 0) or 0)
+        if mm > 0 and dpi > 0:
+            poly = expand_polygon(poly, mm / 25.4 * dpi, buf.buffer.shape[:2])
         add_erase(buf.meta, poly, source=f"stamp:{label}")
 
     def _log(self, msg: str) -> None:
