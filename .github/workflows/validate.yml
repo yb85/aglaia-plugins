@@ -34,7 +34,10 @@ jobs:
 
       - name: Manifests, import scan, and a current index
         run: |
-          # `platformdirs` because the index builder imports aglaia's
-          # manifest reader, which comes through `aglaia.app_data`.
-          python -m pip install -q numpy opencv-python-headless platformdirs
+          # The index builder imports aglaia's manifest reader, and the
+          # import scan resolves the modules a plugin may import. Install
+          # the checked-out aglaia itself (base deps, no GUI) rather than
+          # a hand-kept list: every run since 2026-09-05 failed on one
+          # more missing module.
+          python -m pip install -q ./aglaia
           python aglaia/scripts/build_plugin_index.py registry --check
