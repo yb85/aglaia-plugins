@@ -4,14 +4,17 @@ Upload a finished export to a **Corpus library** instance: `POST /book/upload`, 
 
 Aglaïa already knows the document's metadata, so it sends it — retyping a title into a web form is the tedium this destination removes. Only fields that have a value are sent: an empty field means *erase this* to the corpus's metadata route.
 
+Formats offered: PDF, Markdown, and Aglaïa's **OCR textpack** (`<stem>_OCR.textpack`: `source.pdf` + `text.md` + raw OCR output, [yb85/aglaia#148](https://github.com/yb85/aglaia/issues/148)). The textpack needs a corpus server that admits `.textpack` uploads (yb85/corpus#119); an older one answers 400 and the send says so. With `corpus.zlib_id` in its `info.json` the OCR attaches to that book; without it corpus creates a new book.
+
 The API's four outcomes stay four:
 
 | code | meaning |
 |---|---|
 | 201 | added, with the id |
 | 200 | already in base; nothing written |
-| 400 | extension not admitted, or empty |
-| 413 | over 2 GiB |
+| 400 | extension not admitted, empty, or a malformed textpack |
+| 413 | over 2 GiB — over **100 MB** behind Cloudflare: send a big textpack to the LAN address |
+| 422 | the textpack's `corpus.zlib_id` names no book |
 
 See the module docstring in the entry file for the details, and
 [the plugin store design](https://github.com/yb85/aglaia/blob/main/docs/plugin-store.md)

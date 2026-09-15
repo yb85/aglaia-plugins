@@ -34,5 +34,10 @@ jobs:
 
       - name: Manifests, import scan, and a current index
         run: |
-          python -m pip install -q numpy opencv-python-headless
+          # The index builder imports aglaia's manifest reader, and the
+          # import scan resolves the modules a plugin may import. Install
+          # the checked-out aglaia itself (base deps, no GUI) rather than
+          # a hand-kept list: every run since 2026-09-05 failed on one
+          # more missing module.
+          python -m pip install -q ./aglaia
           python aglaia/scripts/build_plugin_index.py registry --check

@@ -3,8 +3,8 @@
 
 Corpus is a private library: a catalogue harvested from elsewhere, plus whatever
 its owner puts in by hand. `POST /book/upload` is the second door — the one a
-PDF of a course, an EPUB bought elsewhere, or a Markdown file out of OCR comes
-through.
+PDF of a course, an EPUB bought elsewhere, a Markdown file out of OCR, or an
+Aglaïa OCR textpack (`<stem>_OCR.textpack`) comes through.
 
     POST {base}/book/upload
     X-API-Key: …
@@ -20,8 +20,10 @@ plugin keeps them four rather than flattening them into ok/failed:
 
     201 added     the reply carries id, path, bytes
     200 exists    same title and author already in base; nothing written
-    400 refuse    extension not admitted, or an empty file
-    413 refuse    over 2 GiB
+    400 refuse    extension not admitted, an empty file, or a malformed
+                  textpack (body: message + detail/reason)
+    413 refuse    over 2 GiB — or over 100 MB behind Cloudflare
+    422 refuse    a textpack's `corpus.zlib_id` names no book
 
 `200 exists` is not an error — the book is in the library, which is what the
 user wanted. Reporting it as a failure would teach him to ignore failures.
@@ -40,7 +42,7 @@ from aglaia.plugin_api import (
 #: gets a 400, so it is refused locally with a message that names the list —
 #: a round trip to be told "no" is a round trip wasted.
 ADMITTED = ("pdf", "epub", "djvu", "md", "txt", "docx", "doc", "odt", "rtf",
-            "mobi", "azw3", "fb2", "html")
+            "mobi", "azw3", "fb2", "html", "textpack")
 
 
 @register_destination
@@ -49,7 +51,11 @@ class CorpusDestination(Destination):
     display = "Export to Corpus library"
     description = "Upload the export to a Corpus library instance."
     # Both the PDF and the Markdown export are admitted, so both are offered.
-    accepts = ("pdf", "md", "txt", "epub", "html")
+    # `textpack` is Aglaïa's OCR textpack (source.pdf + text.md + raw OCR,
+    # yb85/aglaia#148): corpus files it under downloads/ocr/ by its
+    # `_OCR.textpack` suffix. Its info.json carries OCR provenance, not the
+    # catalogue record, so the metadata fields below are still sent.
+    accepts = ("pdf", "md", "txt", "epub", "html", "textpack")
 
     CONFIG_FIELDS = (
         # No default, and a placeholder that is not anybody's address. A
@@ -166,9 +172,6 @@ class CorpusDestination(Destination):
         except httpx.HTTPError as e:
             return SendResult(False, f"Upload failed — {type(e).__name__}: {e}")
 
-        if r.status_code == 413:
-            return SendResult(False, f"{path.name} is over the corpus's 2 GiB "
-                                     f"ceiling.")
         if r.status_code in (401, 403):
             return SendResult(False, "The corpus rejected the API key.")
 
@@ -177,6 +180,27 @@ class CorpusDestination(Destination):
             body = r.json()
         except Exception:
             pass
+        if not isinstance(body, dict):
+            body = {}
+
+        if r.status_code == 413:
+            # Two ceilings: the corpus's own 2 GiB, and 100 MB when the
+            # instance sits behind Cloudflare — which is the one a scanned
+            # book's textpack usually meets.
+            size_mb = path.stat().st_size / 1e6
+            return SendResult(
+                False, f"{path.name} ({size_mb:.0f} MB) is too large for this "
+                       f"corpus address. Behind Cloudflare the limit is "
+                       f"100 MB: use the corpus's local network address "
+                       f"instead.", detail=body)
+        if r.status_code == 422:
+            # Only a textpack names a book: `corpus.zlib_id` in its info.json.
+            why = body.get("message") or body.get("detail") or ""
+            return SendResult(
+                False, "The corpus has no book with the zlib id this textpack "
+                       "names. Check the id, or export without one to add it "
+                       "as a new book." + (f" ({why})" if why else ""),
+                detail=body)
 
         if r.status_code == 200:
             return SendResult(
@@ -191,7 +215,8 @@ class CorpusDestination(Destination):
                       + (f" as #{book_id}." if book_id else "."),
                 url=where, detail=body)
         if r.status_code == 400:
-            why = body.get("detail") or body.get("reason") or r.text[:200]
+            why = (body.get("message") or body.get("detail")
+                   or body.get("reason") or r.text[:200])
             return SendResult(False, f"The corpus refused it: {why}")
         return SendResult(False, f"The corpus answered {r.status_code}: "
                                  f"{r.text[:200]}")
