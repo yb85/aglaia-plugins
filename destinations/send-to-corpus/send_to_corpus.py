@@ -3,8 +3,8 @@
 
 Corpus is a private library: a catalogue harvested from elsewhere, plus whatever
 its owner puts in by hand. `POST /book/upload` is the second door — the one a
-PDF of a course, an EPUB bought elsewhere, or a Markdown file out of OCR comes
-through.
+PDF of a course, an EPUB bought elsewhere, a Markdown file out of OCR, or an
+Aglaïa OCR textpack (`<stem>_OCR.textpack`) comes through.
 
     POST {base}/book/upload
     X-API-Key: …
@@ -40,7 +40,7 @@ from aglaia.plugin_api import (
 #: gets a 400, so it is refused locally with a message that names the list —
 #: a round trip to be told "no" is a round trip wasted.
 ADMITTED = ("pdf", "epub", "djvu", "md", "txt", "docx", "doc", "odt", "rtf",
-            "mobi", "azw3", "fb2", "html")
+            "mobi", "azw3", "fb2", "html", "textpack")
 
 
 @register_destination
@@ -49,7 +49,11 @@ class CorpusDestination(Destination):
     display = "Export to Corpus library"
     description = "Upload the export to a Corpus library instance."
     # Both the PDF and the Markdown export are admitted, so both are offered.
-    accepts = ("pdf", "md", "txt", "epub", "html")
+    # `textpack` is Aglaïa's OCR textpack (source.pdf + text.md + raw OCR,
+    # yb85/aglaia#148): corpus files it under downloads/ocr/ by its
+    # `_OCR.textpack` suffix. Its info.json carries OCR provenance, not the
+    # catalogue record, so the metadata fields below are still sent.
+    accepts = ("pdf", "md", "txt", "epub", "html", "textpack")
 
     CONFIG_FIELDS = (
         # No default, and a placeholder that is not anybody's address. A
