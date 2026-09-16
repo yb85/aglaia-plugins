@@ -88,6 +88,13 @@ class CorpusDestination(Destination):
     def _root(self) -> str:
         return str(self.conf("base_url") or "").strip().rstrip("/")
 
+    def _proxy_headers(self) -> dict:
+        """Only what gets a request PAST whatever stands in front of the
+        corpus. `/healthz` needs no API key — but a proxy still needs its
+        credentials, and omitting them here made the very first probe fail
+        with "Access refuses", however well the token was configured."""
+        return dict(self.headers("extra_headers"))
+
     def _headers(self) -> dict:
         # The API key, plus whatever the user added — a corpus can sit behind
         # an authenticating proxy that wants headers of its own (Cloudflare
@@ -222,7 +229,8 @@ class CorpusDestination(Destination):
                                kind=CheckResult.CONFIG)
         try:
             with self._client() as c:
-                health = c.get(f"{root}/healthz")
+                health = c.get(f"{root}/healthz",
+                               headers=self._proxy_headers())
         except httpx.HTTPError as e:
             return CheckResult(
                 False, f"Could not reach {root}.",
