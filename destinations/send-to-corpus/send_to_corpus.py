@@ -19,7 +19,8 @@ The API answers with four outcomes that mean four different things, and this
 plugin keeps them four rather than flattening them into ok/failed:
 
     201 added     the reply carries id, path, bytes
-    200 exists    same title and author already in base; nothing written
+    200 exists    the corpus already has it (its own rule: same sha-256, or
+                  same title and author); nothing written
     400 refuse    extension not admitted, an empty file, or a malformed
                   textpack (body: message + detail/reason)
     413 refuse    over 2 GiB — or over 100 MB behind Cloudflare
@@ -203,9 +204,20 @@ class CorpusDestination(Destination):
                 detail=body)
 
         if r.status_code == 200:
+            # Name the corpus and the book it matched. A bare "already there"
+            # is unfalsifiable: a volume of a series can match its siblings on
+            # title alone, and the user then has no way to see that the match
+            # is wrong, nor which instance answered (a stale address answers
+            # like a current one). Whatever the corpus says it matched goes in
+            # the message.
+            got = body.get("title") or body.get("detail") or body.get("message")
+            got_id = body.get("id")
+            which = f" — it matched {got!r}" if got else ""
+            which += f" (#{got_id})" if got_id else ""
             return SendResult(
-                True, f"Already in the corpus: "
-                      f"{meta.title or path.name} — nothing written.",
+                True, f"{root} already has {meta.title or path.name}{which}. "
+                      f"Nothing was written. If that is a different book, "
+                      f"check the title and the address above.",
                 already_there=True, detail=body)
         if r.status_code == 201:
             book_id = body.get("id")

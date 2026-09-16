@@ -11,7 +11,7 @@ The API's four outcomes stay four:
 | code | meaning |
 |---|---|
 | 201 | added, with the id |
-| 200 | already in base; nothing written |
+| 200 | the corpus already has it (its rule: same sha-256, or same title and author); nothing written. The message names the instance and the book it matched, so a wrong match is visible |
 | 400 | extension not admitted, empty, or a malformed textpack |
 | 413 | over 2 GiB — over **100 MB** behind Cloudflare: send a big textpack to the LAN address |
 | 422 | the textpack's `corpus.zlib_id` names no book |
