@@ -6,6 +6,10 @@ Aglaïa already knows the document's metadata, so it sends it — retyping a tit
 
 Formats offered: PDF, Markdown, and Aglaïa's **OCR textpack** (`<stem>_OCR.textpack`: `source.pdf` + `text.md` + raw OCR output, [yb85/aglaia#148](https://github.com/yb85/aglaia/issues/148)). The textpack needs a corpus server that admits `.textpack` uploads (yb85/corpus#119); an older one answers 400 and the send says so. With `corpus.zlib_id` in its `info.json` the OCR attaches to that book; without it corpus creates a new book.
 
+**Behind a proxy.** A corpus can sit behind an authenticating proxy (Cloudflare Access, for one). Add its headers under **Additional headers** in the plugin's settings — for Access, `CF-Access-Client-Id` and `CF-Access-Client-Secret`, whose values are generated as a *service token*. They go out with every request, alongside the API key, and their values live in the keychain.
+
+Redirects are never followed: a proxy answering 302 towards its own login page used to be read as a corpus answer, so a send that never arrived was reported as "already present". Any redirect, or any HTML where JSON was promised, is now a failure that names the proxy and the address.
+
 The API's four outcomes stay four:
 
 | code | meaning |
