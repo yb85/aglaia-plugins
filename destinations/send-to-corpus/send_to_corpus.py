@@ -132,22 +132,68 @@ class CorpusDestination(Destination):
             return "a redirect"
         return "an HTML page"
 
+    @staticmethod
+    def _access_meta(location: str) -> dict:
+        """What Cloudflare Access itself says about this refusal.
+
+        Its redirect carries a `meta` JWT whose payload names what it saw —
+        `service_token_status` in particular. The payload is read, never
+        trusted and never verified: it is the proxy's own account, and it is
+        the difference between "you sent no token" and "your token was not
+        accepted", which are two different things for the user to fix."""
+        import base64
+        import json as _json
+        from urllib.parse import parse_qs, urlparse
+        got = parse_qs(urlparse(location).query).get("meta") or []
+        if not got:
+            return {}
+        parts = got[0].split(".")
+        if len(parts) < 2:
+            return {}
+        raw = parts[1] + "=" * (-len(parts[1]) % 4)
+        try:
+            out = _json.loads(base64.urlsafe_b64decode(raw))
+        except Exception:
+            return {}
+        return out if isinstance(out, dict) else {}
+
     def _wall(self, r, where: str) -> tuple[str, dict]:
         """Message + detail for a request an authentication wall stopped."""
         who = self._blocked_by(r)
         target = r.headers.get("location", "")
         if who == "Cloudflare Access":
-            msg = (f"Cloudflare Access refuses the request to {where}: a "
-                   f"service token is missing. Add CF-Access-Client-Id and "
-                   f"CF-Access-Client-Secret under Additional headers.")
+            sent = sorted(self.headers("extra_headers"))
+            meta = self._access_meta(target)
+            token_ok = meta.get("service_token_status")
+            if not sent:
+                msg = (f"Cloudflare Access refuses the request to {where}: a "
+                       f"service token is missing. Add CF-Access-Client-Id "
+                       f"and CF-Access-Client-Secret under Additional "
+                       f"headers.")
+            elif token_ok is False:
+                msg = (f"Cloudflare Access refuses the request to {where}. "
+                       f"It was sent {', '.join(sent)} and Access reports no "
+                       f"valid service token, so the pair is wrong, or that "
+                       f"token is not on this application with a policy "
+                       f"whose action is Service Auth.")
+            else:
+                msg = (f"Cloudflare Access refuses the request to {where}, "
+                       f"although {', '.join(sent)} went with it. Check the "
+                       f"token pair and the application's policy.")
         elif who:
             msg = (f"{where} did not answer as a corpus — {who} came back "
                    f"instead. The address may be wrong, or something is "
                    f"asking this machine to sign in.")
         else:
             msg = f"{where} answered {r.status_code} with no corpus reply."
-        return msg, {"status": r.status_code, "location": target,
-                     "content_type": r.headers.get("content-type", "")}
+        detail = {"status": r.status_code, "location": target,
+                  "content_type": r.headers.get("content-type", "")}
+        if who == "Cloudflare Access":
+            meta = self._access_meta(target)
+            detail["sent_headers"] = sorted(self.headers("extra_headers"))
+            detail["service_token_status"] = meta.get("service_token_status")
+            detail["auth_status"] = meta.get("auth_status")
+        return msg, detail
 
     @staticmethod
     def _corpus_json(r):

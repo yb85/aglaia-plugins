@@ -8,6 +8,8 @@ Formats offered: PDF, Markdown, and Aglaïa's **OCR textpack** (`<stem>_OCR.text
 
 **Behind a proxy.** A corpus can sit behind an authenticating proxy (Cloudflare Access, for one). Add its headers under **Additional headers** in the plugin's settings — for Access, `CF-Access-Client-Id` and `CF-Access-Client-Secret`, whose values are generated as a *service token*. They go out with every request, alongside the API key, and their values live in the keychain.
 
+When Access still refuses with the headers set, the message says so and quotes Access's own verdict (`service_token_status` from its redirect): the pair is wrong, or that token is not on this application under a policy whose **action is Service Auth** — adding the token to an *Allow* policy is not enough.
+
 Redirects are never followed: a proxy answering 302 towards its own login page used to be read as a corpus answer, so a send that never arrived was reported as "already present". Any redirect, or any HTML where JSON was promised, is now a failure that names the proxy and the address.
 
 The API's four outcomes stay four:
