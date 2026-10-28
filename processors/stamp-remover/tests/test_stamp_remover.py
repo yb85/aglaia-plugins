@@ -215,3 +215,26 @@ def test_snippet_is_described_at_the_page_scale(ctx):
     assert sr.load_library(ctx, page_dpi=150)[0].scale == 0.5
     assert sr.load_library(ctx, page_dpi=300)[0].scale == 1.0
     assert sr.load_library(ctx, page_dpi=0)[0].scale == 1.0      # unknown → as-is
+
+
+def test_a_worker_sees_the_library_change(ctx):
+    """A worker process lives for the whole session, and its processor with
+    it: a stamp added, retraced or removed in the library window must reach
+    the next page, not the next launch."""
+    _add(ctx, "first")
+    proc = sr.StampRemover(sr.StampRemoverOption())
+    proc.ctx = ctx
+    assert [s.label for s in proc._stamps(300.0)] == ["first"]
+    sid = _add(ctx, "second")
+    assert sorted(s.label for s in proc._stamps(300.0)) == ["first", "second"]
+    sr.delete_stamp(ctx, sid)
+    assert [s.label for s in proc._stamps(300.0)] == ["first"]
+
+
+def test_deleting_a_stamp_removes_its_descriptor_caches(ctx):
+    sid = _add(ctx)
+    sr.load_library(ctx)                          # writes <id>.<tag>.npz
+    d = sr.library_dir(ctx)
+    assert list(d.glob(f"{sid}.*.npz"))
+    sr.delete_stamp(ctx, sid)
+    assert not list(d.glob(f"{sid}*"))

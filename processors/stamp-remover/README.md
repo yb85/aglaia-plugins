@@ -16,6 +16,11 @@ scale and perspective the camera gave it.
 2. Add `StampRemover` to your pipeline **right after the layout split**
    (`PageDetector`), before deskew.
 
+Edits to the library reach the next page processed, without a restart: the
+step reloads the library whenever a stamp's image or sidecar changes (1.4.1).
+Pages already processed keep their result — reprocess them to apply the new
+library.
+
 ```yaml
 - name: stamps
   processor: StampRemover

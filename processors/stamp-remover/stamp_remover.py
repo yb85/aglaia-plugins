@@ -268,10 +268,24 @@ def rename_stamp(ctx, stamp_id: str, label: str) -> None:
 
 def delete_stamp(ctx, stamp_id: str) -> None:
     d = library_dir(ctx)
-    for suffix in (".png", ".json", ".npz"):
-        f = d / f"{stamp_id}{suffix}"
+    # The descriptor caches are `<id>.<detector>_<scale>.npz`, one per scale.
+    for f in [d / f"{stamp_id}.png", d / f"{stamp_id}.json",
+              *d.glob(f"{stamp_id}.*.npz")]:
         if f.is_file():
             f.unlink()
+
+
+def _library_signature(ctx) -> tuple:
+    """What the library's stamps are, cheaply: name, mtime and size of each
+    image and sidecar. The `.npz` caches are left out — `load_library`
+    writes them, and they would change the signature it is compared with."""
+    try:
+        return tuple(sorted(
+            (f.name, st.st_mtime_ns, st.st_size)
+            for f in library_dir(ctx).iterdir()
+            if f.suffix in (".json", ".png") and (st := f.stat())))
+    except OSError:
+        return ()
 
 
 # ── import / export ───────────────────────────────────────────────────
@@ -559,7 +573,12 @@ class StampRemover(AbstractImageProcessor):
     def _stamps(self, page_dpi: float = 0.0) -> list:
         # Keyed by the page dpi: a library described for a 300 dpi page is
         # the wrong description for a 139 dpi one, and a project can mix.
-        key = (str(self.opt.detector), round(float(page_dpi or 0.0), 1))
+        # And by the library's files: a worker outlives any edit made in the
+        # library window, and kept the library it first loaded until the app
+        # was restarted. A directory listing per page costs microseconds against SIFT's
+        # ~80 ms.
+        key = (str(self.opt.detector), round(float(page_dpi or 0.0), 1),
+               _library_signature(self.ctx) if self.ctx else ())
         if self._library is None or self._library_key != key:
             self._library = (load_library(self.ctx, detector=key[0],
                                           page_dpi=key[1]) if self.ctx else [])
