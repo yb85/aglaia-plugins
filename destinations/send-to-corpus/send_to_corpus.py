@@ -9,7 +9,7 @@ Aglaïa OCR textpack (`<stem>_OCR.textpack`) comes through.
     POST {base}/book/upload
     X-API-Key: …
     multipart: file=@… [title] [author] [publisher] [language] [year]
-                       [pages] [categories]
+                       [pages] [categories] [content_type]
 
 Everything but `file` is optional; without a title the filename is used. Since
 Aglaïa already knows the document's metadata, it sends it — retyping a title
@@ -72,6 +72,12 @@ class CorpusDestination(Destination):
         Field("default_categories", "Default categories", "str", "",
               placeholder="Ecclésiologie",
               help="Used when the project does not say."),
+        # Aglaïa scans books: without it corpus files the upload with no
+        # nature at all, beside harvested records that all say `Books`.
+        Field("default_content_type", "Document type", "str", "Books",
+              placeholder="Books",
+              help="Corpus nature (Books, podcast…). Used when the project "
+                   "does not say."),
         Field("timeout_s", "Timeout (seconds)", "int", 300,
               help="Maximum upload size is 2 GiB."),
     )
@@ -294,6 +300,8 @@ class CorpusDestination(Destination):
                           str(self.conf("default_language") or "").strip())
         fields.setdefault("categories",
                           str(self.conf("default_categories") or "").strip())
+        fields.setdefault("content_type",
+                          str(self.conf("default_content_type") or "").strip())
         data = {k: v for k, v in fields.items() if v}
 
         try:
