@@ -2,7 +2,7 @@
 
 Upload a finished export to a **Corpus library** instance: `POST /book/upload`, multipart, `X-API-Key` header.
 
-Aglaïa already knows the document's metadata, so it sends it — retyping a title into a web form is the tedium this destination removes. Only fields that have a value are sent: an empty field means *erase this* to the corpus's metadata route.
+Aglaïa already knows the document's metadata, so it sends it — retyping a title into a web form is the tedium this destination removes. Only fields that have a value are sent: an empty field means *erase this* to the corpus's metadata route. Aglaïa scans books, so every upload goes out as `content_type=Books` unless the **Document type** setting says otherwise (`podcast`, `course`…); without it corpus filed the book with no nature at all.
 
 Formats offered: PDF, Markdown, and Aglaïa's **OCR textpack** (`<stem>_OCR.textpack`: `source.pdf` + `text.md` + raw OCR output, [yb85/aglaia#148](https://github.com/yb85/aglaia/issues/148)). The textpack needs a corpus server that admits `.textpack` uploads (yb85/corpus#119); an older one answers 400 and the send says so. With `corpus.zlib_id` in its `info.json` the OCR attaches to that book; without it corpus creates a new book.
 
